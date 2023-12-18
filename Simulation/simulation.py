@@ -16,9 +16,6 @@ Parameters:
 
 
 price_areas = {}
-
-
-
 RANDOM_SEED = 42
 
 revenue = 0
@@ -50,11 +47,11 @@ def customer(env, name, hub):
     # 1 = pay for every price, 0 = pay only the standard price (0.42)
     willingness = 1
     price = get_price(choices(areas, weights_areas)[0])
-    hour = choices(hours, weights_hours)
+    hour = choices(hours, weights_hours)[0]
     travel_time_minutes = choices(duration_trips, weights_durations)[0]
     proc_difference = ((price - standard_price) / standard_price) * -10
     print(
-        f'Customer {name} arrives at the hub at {hour[0]}. The price based on P-pricing is {price}, difference is {proc_difference}')
+        f'Customer {name} arrives at the hub at {hour}. The price based on P-pricing is {price}, difference is {proc_difference}')
 
     take_bike = min(abs(random.uniform(0, 5) * proc_difference), 1)
     if take_bike > willingness:
