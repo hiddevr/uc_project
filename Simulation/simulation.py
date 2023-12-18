@@ -46,8 +46,8 @@ def customer(env, name, hub):
 
     # TODO: make this a function argument, so it is easier
     # to test multiple 'willingness'-factors
-    # 1 = pay for every price, 0 = pay only the standard price (0.42)
-    willingness = 1
+    # 1 = pay for every price, 0 = pay only the standard price (0.42) or less
+    willingness = 0
     price = get_price(choices(areas, weights_areas)[0])
     hour = choices(hours, weights_hours)[0]
     travel_time_minutes = choices(duration_trips, weights_durations)[0]
