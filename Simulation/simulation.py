@@ -20,6 +20,7 @@ RANDOM_SEED = 42
 
 revenue = 0
 trips = 0
+minutes = 0
 
 
 class BikeHub:
@@ -41,6 +42,7 @@ def get_price(start_area):
 def customer(env, name, hub):
     global revenue
     global trips
+    global minutes
 
     # TODO: make this a function argument, so it is easier
     # to test multiple 'willingness'-factors
@@ -49,11 +51,11 @@ def customer(env, name, hub):
     price = get_price(choices(areas, weights_areas)[0])
     hour = choices(hours, weights_hours)[0]
     travel_time_minutes = choices(duration_trips, weights_durations)[0]
-    proc_difference = ((price - standard_price) / standard_price) * -10
+    proc_difference = ((price - standard_price) / standard_price) * 10
     print(
         f'Customer {name} arrives at the hub at {hour}. The price based on P-pricing is {price}, difference is {proc_difference}')
 
-    take_bike = min(abs(random.uniform(0, 5) * proc_difference), 1)
+    take_bike = min(random.uniform(0, 5) * proc_difference, 1)
     if take_bike > willingness:
         print(f'Customer {name} did not take a bike, takebike is {take_bike}.')
         return
@@ -67,6 +69,7 @@ def customer(env, name, hub):
             yield env.process(hub.get_bike(travel_time_minutes))
             revenue += (travel_time_minutes * price) + 1
             trips += 1
+            minutes += travel_time_minutes
         else:
             print(f'Customer {name} did not get a bike, waiting time too long')
 
@@ -85,11 +88,11 @@ if __name__ == "__main__":
         price_areas[area] = random.uniform(0.95, 1.05)
 
     env = simpy.Environment()
-    env.process(setup(env, 100))
+    env.process(setup(env, 10000))
 
-    env.run(until=4000)
+    env.run(until=710839)
 
-    print(f"Total revenue is ${revenue}, n of trips: {trips}, avg per trip is ${revenue / trips}")
+    print(f"Total revenue is ${revenue}, n of trips: {trips}, avg per trip is ${revenue / trips}, {minutes} minutes")
 
 # No solution in the in the research question
 #
