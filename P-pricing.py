@@ -2,75 +2,100 @@ import pickle
 from scipy.stats import gaussian_kde
 from scipy.integrate import quad
 import numpy as np
-
-MAX_BATTERY_DISTANCE = 3414405
-
-def Fr(p):
-    # Implement the function to calculate the probability of passengers willing to pay price p
-    pass
+from scipy.optimize import minimize_scalar
 
 
-def Fw(p, avg_scooter_travelled):
-    # Probablity of sufficient battery
-    with open('/mnt/data/kde_data.pkl', 'rb') as file:
-        kde_data = pickle.load(file)
+class PPricing:
 
-    def cdf(point, kde):
-        return quad(kde.evaluate, -np.inf, point)[0]
+    def __init__(self):
+        self.max_battery_distance = 1090013.4
+        self.alpha = 1
+        self.beta = 0.1
+        self.p = 0.45
+        self.price_bounds = (0.2, 1)
 
-    kde_model = gaussian_kde(kde_data['dataset'])
-    kde_model.set_bandwidth(kde_data['bandwidth'])
+    def _probability_passenger_willing_to_pay(self, p=0.45):
+        """
+        Function for calculating probability of passenger willing to pay price p
+        :param p: Price
+        :param alpha: Scaling to adjust base demand probability
+        :param beta: Rate at which demand decreases as price increases
+        :return: Probability of passenger willing to pay price p
+        """
+        probability = self.alpha * np.exp(-self.beta)
+        return probability
 
-    remaining_distance = MAX_BATTERY_DISTANCE - avg_scooter_travelled
-    probability = cdf(remaining_distance, kde_model)
-    return probability
-    pass
+    def _probability_sufficient_battery(self, t):
+        """
+        Function for calculating if an e-scooter has sufficient battery for a trip.
+        :param t: current time period
+        :return: Probability of e-scooter having sufficient battery for trip
+        """
+        with open('distributions/trip_distance.pkl', 'rb') as file:
+            trip_distance_kde = pickle.load(file)
 
+        with open('distributions/average_distance_per_hour.pkl', 'rb') as f:
+            average_distances = pickle.load(f)
 
-def LocalOptimal(demand, supply):
-    # Implement the optimization algorithm to find the optimal price
-    # This is a placeholder and needs to be defined based on your optimization strategy
-    pass
+        kde_model = gaussian_kde(trip_distance_kde['dataset'])
+        kde_model.set_bandwidth(trip_distance_kde['bandwidth'])
 
+        avg_travelled = average_distances[t]
+        remaining_capacity = self.max_battery_distance - avg_travelled
+        probability = 1 - kde_model.integrate_box_1d(remaining_capacity, np.inf)
 
-def RevDec(T_star, delta_T, p_star, delta_p):
-    # Implement the function to calculate the revenue decrease
-    return T_star * delta_p + delta_T * delta_p - delta_T * p_star
+        return probability
 
+    def _expected_revenue(self, p, demand, supply):
+        expected_demand = demand * self._probability_passenger_willing_to_pay(p)
+        expected_supply = supply * self._probability_sufficient_battery(p)
+        return p * min(expected_demand, expected_supply)
 
-def RevInc(delta_V, V, Fw, p2c, p1c):
-    # Implement the function to calculate the revenue increase
-    return (V + delta_V) * Fw(p2c) * p2c - V * Fw(p1c) * p1c
+    def _negative_expected_revenue(self, p, demand, supply):
+        return -self._expected_revenue(p, demand, supply)
 
+    def _calc_local_optimal(self, t, demand, supply):
+        result = minimize_scalar(
+            self._negative_expected_revenue,
+            bounds=self.price_bounds,
+            args=(demand, supply),
+            method='bounded'
+        )
+        if result.success:
+            optimal_price = result.x
+            max_expected_revenue = -result.fun
+            return optimal_price, max_expected_revenue
+        else:
+            print('No optimal price')
 
-# Main algorithm implementation
-def P_Pricing(R, V, R_next):
-    n = len(R)
-    p_star = np.zeros(n)
-    delta_p = np.zeros(n)
-    T_star = np.zeros(n)
-    delta_T = np.zeros(n)
+    def _calc_revenue_decrease(self, demand, optimal_price):
+        trips_optimal_price = self._probability_passenger_willing_to_pay(optimal_price) * demand
+        trips_default_price = self._probability_passenger_willing_to_pay(self.p) * demand
+        delta_trips = abs(trips_optimal_price - trips_default_price)
+        delta_p = abs(optimal_price - self.p)
+        return trips_optimal_price * optimal_price - (trips_optimal_price + delta_trips) * (optimal_price - delta_p)
 
-    # First loop to compute initial values
-    for i in range(n):
-        D_it = lambda p: R[i] * (1 - Fr(p))
-        S_it = lambda p: V[i] * Fw(p)
-        p_star[i] = LocalOptimal(D_it, S_it)
-        # Compute T_star, delta_T, delta_p based on your model
+    def _calc_revenue_increase(self, supply, new_price, t, added_trips):
+        actual_supply = self._probability_sufficient_battery(t) * supply
+        additional_trips = min(added_trips, actual_supply)
+        return additional_trips * self._probability_passenger_willing_to_pay(new_price) * new_price
 
-    # Second loop for future prediction
-    for j in range(n):
-        Dtj_next = lambda p: R_next[j] * (1 - Fr(p))
-        # Compute Vjt_next and Sjt_next based on your model
-        # p_next = LocalOptimal(Dtj_next, Sjt_next)
-        # Compute RevDec and RevInc based on your model
+    def _predict_demand(self, supply_demand_df):
+        return 0
 
+    def p_pricing(self, t, supply_demand_df):
+        # Assumes df with columns 'requests', 'available_scooters', 'region' for a single time step
+        no_regions = supply_demand_df['region'].nunique()
+        for index, row in supply_demand_df.iterrows():
+            optimal_price = self._calc_local_optimal(t, row['requests'], row['requests'])
+            revenue_decrease = self._calc_revenue_decrease()
 
-    return p_star
+        predicted_demand = self._predict_demand(supply_demand_df)
+        pass
 
 
 R = [100, 150, 200]  # Requests
 V = [50, 60, 70]  # Available e-scooters
 R_next = [120, 140, 210]  # Predicted demand
 
-optimal_prices = P_Pricing(R, V, R_next)
+optimal_prices = p_pricing(R, V, R_next)
