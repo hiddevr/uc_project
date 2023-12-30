@@ -54,7 +54,7 @@ class PPricing:
     def _negative_expected_revenue(self, p, demand, supply):
         return -self._expected_revenue(p, demand, supply)
 
-    def _calc_local_optimal(self, t, demand, supply):
+    def _calc_local_optimal(self, demand, supply):
         result = minimize_scalar(
             self._negative_expected_revenue,
             bounds=self.price_bounds,
@@ -71,9 +71,10 @@ class PPricing:
     def _calc_revenue_decrease(self, demand, optimal_price):
         trips_optimal_price = self._probability_passenger_willing_to_pay(optimal_price) * demand
         trips_default_price = self._probability_passenger_willing_to_pay(self.p) * demand
-        delta_trips = abs(trips_optimal_price - trips_default_price)
         delta_p = abs(optimal_price - self.p)
-        return trips_optimal_price * optimal_price - (trips_optimal_price + delta_trips) * (optimal_price - delta_p)
+        delta_trips = abs(trips_optimal_price - trips_default_price)
+        rev_decrease = trips_optimal_price * delta_p + delta_trips * delta_p - delta_trips * optimal_price
+        return rev_decrease
 
     def _calc_revenue_increase(self, supply, new_price, t, added_trips):
         actual_supply = self._probability_sufficient_battery(t) * supply
@@ -87,7 +88,7 @@ class PPricing:
         # Assumes df with columns 'requests', 'available_scooters', 'region' for a single time step
         no_regions = supply_demand_df['region'].nunique()
         for index, row in supply_demand_df.iterrows():
-            optimal_price = self._calc_local_optimal(t, row['requests'], row['requests'])
+            optimal_price, _ = self._calc_local_optimal(row['requests'], row['available_scooters'])
             revenue_decrease = self._calc_revenue_decrease()
 
         predicted_demand = self._predict_demand(supply_demand_df)
