@@ -122,6 +122,19 @@ class PPricing:
         epsilon = np.sqrt(np.finfo(float).eps)
         return approx_fprime(x, self._optimize_objective, epsilon)
 
+    def _random(self, x0, max_iterations=1000):
+        x = np.copy(x0)
+        best_value = self._optimize_objective(x)
+        print(best_value)
+        for _ in tqdm(range(max_iterations)):
+            random_x = np.random.randint(1, 6, len(x))
+            new_value = self._optimize_objective(random_x)
+            if new_value > best_value:
+                best_value = new_value
+                x = random_x
+
+        return x
+
     def _gradient_descent(self, x0, learning_rate=1e-3, max_iterations=1, tolerance=1e-6):
         x = np.copy(x0)
         for _ in tqdm(range(max_iterations)):
@@ -136,7 +149,7 @@ class PPricing:
         n = self.transition_matrix.shape[0]
         x0 = np.random.randint(1, 6, 2 * n)
 
-        optimized_x = self._gradient_descent(x0)
+        optimized_x = self._random(x0)
         optimal_delta_T = optimized_x[:n]
         optimal_delta_V = optimized_x[n:]
         return optimal_delta_T, optimal_delta_V
@@ -147,15 +160,23 @@ class PPricing:
         return transition_matrix
 
     def _calc_optimal_price(self, delta_T):
-        print(delta_T.shape)
         delta_p = self.p - self._calc_inverse_demand(self._calc_demand(self.requests) - delta_T, self._calc_demand(self.requests))
-        optimal_price = self.p - delta_p
+        optimal_price = np.full(len(self.p), 0)
+        for i in range(len(self.p)):
+            l_optimal_price = self.p[i] - delta_p[i]
+            #print("I is ", i, " self.p: ", self.p[i], " delta: ", delta_p[i], " l_optimal" , l_optimal_price)
+            if l_optimal_price <= 0:
+                l_optimal_price = self.p[i]
+            optimal_price[i] = l_optimal_price
+
         return optimal_price
 
     def p_pricing(self, t, supply_demand):
+        supply_demand = np.nan_to_num(supply_demand)
         transition_matrix = self._load_transition_matrix()
 
         self.total_available_scooters = np.sum(supply_demand[:, 3])
+
         self.t = t
         self.available_scooters = supply_demand[:, 3]
         self.requests = supply_demand[:, 1]
