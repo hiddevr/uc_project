@@ -89,6 +89,7 @@ class PPricing:
         old_trips = self._calc_trips_amount(old_demand, old_supply)
         old_trips_sufficient_battery = old_trips * self._probability_sufficient_battery(self.t)
         rev_increase = (new_trips_sufficient_battery - old_trips_sufficient_battery) * self.p
+        print('increase: ', rev_increase)
         return rev_increase
 
     def _calc_revenue_decrease(self, delta_T):
@@ -98,6 +99,7 @@ class PPricing:
         no_trips = delta_T + total_trips
         delta_p = self.p - self._calc_inverse_demand(no_trips, demand)
         rev_dec = total_trips * delta_p + delta_T * delta_p - delta_T * self.p
+        print('decrease: ', rev_dec)
         return rev_dec
 
     def _calc_next_supply_demand_df(self, transition_matrix, supply_demand, t):
@@ -106,6 +108,8 @@ class PPricing:
         total_trips_t = self._calc_trips_amount(demand, supply)
         added_scooters = np.sum(transition_matrix * total_trips_t[:, None], axis=1)
         unused_scooters = supply - total_trips_t
+        print(added_scooters)
+        print(unused_scooters)
         self.next_available_scooters = added_scooters + unused_scooters
         new_supply_demand = np.column_stack((supply_demand[:, 2],  # predicted_requests
                                              added_scooters + unused_scooters,
@@ -118,11 +122,7 @@ class PPricing:
         delta_T, delta_V = x[:n], x[n:]
         return -(sum(self._calc_revenue_increase(delta_V)) - sum(self._calc_revenue_decrease(delta_T)))
 
-    def _estimate_gradient(self, x):
-        epsilon = np.sqrt(np.finfo(float).eps)
-        return approx_fprime(x, self._optimize_objective, epsilon)
-
-    def _random(self, x0, max_iterations=1000):
+    def _random(self, x0, max_iterations=10):
         x = np.copy(x0)
         best_value = self._optimize_objective(x)
         print(best_value)
@@ -133,16 +133,6 @@ class PPricing:
                 best_value = new_value
                 x = random_x
 
-        return x
-
-    def _gradient_descent(self, x0, learning_rate=1e-3, max_iterations=1, tolerance=1e-6):
-        x = np.copy(x0)
-        for _ in tqdm(range(max_iterations)):
-            grad = self._estimate_gradient(x)
-            new_x = x - learning_rate * grad
-            if np.linalg.norm(new_x - x) < tolerance:
-                break
-            x = new_x
         return x
 
     def _optimize_solve(self):
