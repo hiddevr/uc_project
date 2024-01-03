@@ -43,13 +43,19 @@ class SupplyModel:
         self.kde_model = gaussian_kde(trip_distance_kde['dataset'])
         self.kde_model.set_bandwidth(trip_distance_kde['bandwidth'])
 
-    def _next_timestep(self):
+    def _next_timestep(self, t, area):
         """
         Functie om aantal e-scooters op een plek te berekenen op basis van transition matrix
         Die matrix heeft de kans dat een e-scooter in die area aankomt
         Dus denk gewoon voor elke area 1 + die fraction * needed_scooters in the volgende timestep
         :return:
         """
+        next_t = (t + 1) % 24
+        fraction = self.transition_matrix[(self.transition_matrix['End Hour'] == next_t) &
+                                          (self.transition_matrix['End Community Area Name'] == area)]['Average Fraction']
+        needed_scooters = self.supply_df[(self.transition_matrix['End Hour'] == next_t) &
+                                          (self.transition_matrix['End Community Area Name'] == area)]['Needed Scooters']
+        return (1 + fraction) * needed_scooters.sum()
 
     def _base_supply(self, t, area):
         return self.supply_df[(self.supply_df['Start Hour'] == t) &
@@ -63,14 +69,12 @@ class SupplyModel:
 
     def estimate_supply(self, t, area):
         base_supply = self._base_supply(t, area)
-        print(base_supply)
         avg_travelled = self._calc_distance_travelled(t, area)
         remaining_capacity = self.max_battery_distance - avg_travelled
         probability = 1 - self.kde_model.integrate_box_1d(remaining_capacity, np.inf)
         return probability * base_supply
 
 class PPricing:
-
     def __init__(self, default_price=0.45, ped=-2):
         self.t = 0
         self.demand_model = DemandModel(default_price, ped)
