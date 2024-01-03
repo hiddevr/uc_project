@@ -1,3 +1,5 @@
+import random
+
 import pandas as pd
 import pickle
 from scipy.stats import gaussian_kde
@@ -11,8 +13,11 @@ class DemandModel:
         self.default_price = default_price
 
     def _base_demand(self, t, start_area):
-        return self.demand_df[(self.demand_df['Start Hour'] == t) &
+        # Calculate random demand, based on supply?
+        trip_count = self.demand_df[(self.demand_df['Start Hour'] == t) &
                               (self.demand_df['Start Community Area Name'] == start_area)]['Trip_Count'].iloc[0]
+        rand_int = random.uniform(0.95, 1.05)
+        return int(rand_int*trip_count)
 
     def estimate_demand(self, t, start_area, new_price):
         base_demand = self._base_demand(t, start_area)
@@ -52,14 +57,14 @@ class SupplyModel:
         """
         next_t = (t + 1) % 24
         fraction = self.transition_matrix[(self.transition_matrix['End Hour'] == next_t) &
-                                          (self.transition_matrix['End Community Area Name'] == area)]['Average Fraction']
+                                          (self.transition_matrix['End Community Area Name'] == area)]['Average Fraction'].iloc[0]
         needed_scooters = self.supply_df[(self.transition_matrix['End Hour'] == next_t) &
-                                          (self.transition_matrix['End Community Area Name'] == area)]['Needed Scooters']
-        return (1 + fraction) * needed_scooters.sum()
+                                          (self.transition_matrix['End Community Area Name'] == area)]['Needed_Scooters'].iloc[0]
+        return (1 + fraction) * needed_scooters
 
     def _base_supply(self, t, area):
         return self.supply_df[(self.supply_df['Start Hour'] == t) &
-                              (self.supply_df['Start Community Area Name'] == area)]['Needed_Scooters'].iloc[0]
+                              (self.supply_df['Start Community Area Name'] == area)]['Trip_Count'].iloc[0] # Trip count may be needed_scooters?
 
     def _calc_distance_travelled(self, t, area):
         filtered_df = self.supply_df[(self.supply_df['Start Community Area Name'] == area) &
@@ -92,9 +97,10 @@ class PPricing:
 def test():
     demand = DemandModel()
     supply = SupplyModel(max_battery_distance=5400)
-    cur_demand = demand.estimate_demand(1, 'EAST GARFIELD PARK', 0.45)
-    print(demand.inverse_demand(1, 'EAST GARFIELD PARK', cur_demand + 10))
-    print(supply.estimate_supply(21, 'WEST TOWN'))
+    cur_demand = demand.estimate_demand(1, 'WEST TOWN', 0.45)
+    print(cur_demand)
+    print(supply.estimate_supply(1, 'WEST TOWN'))
+    print(supply._next_timestep(0, 'WEST TOWN'))
 
 test()
 
