@@ -296,6 +296,8 @@ class PPricing:
         new_revenue_lst = []
 
         for j in range(24):
+            if j == [2,3, 4, 5, 6, 7, 8]: #TODO: Ik skip nu even deze omdat die heel lastig oplossingen kan vinden hiervoor.
+                continue
             print(f'Running for t = {j}')
             self.t = j
             self._update_areas()
