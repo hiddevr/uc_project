@@ -4,7 +4,7 @@ import pickle
 from scipy.stats import gaussian_kde
 import numpy as np
 import scipy.optimize as optimize
-import pygad
+import tqdm
 
 
 class SupplyDemandModel:
@@ -33,17 +33,16 @@ class SupplyDemandModel:
         self.kde_model = gaussian_kde(trip_distance_kde['dataset'])
         self.kde_model.set_bandwidth(trip_distance_kde['bandwidth'])
 
-    def transition_next_timestep(self, t, no_trips, temp=False):
+    def transition_next_timestep(self, t, added_trips, temp=False):
         if (t + 1) % 24 == 0:
-            return
+            t = -1
+        cur_available_scooters = self.supply_df[(self.supply_df['Start Hour'] == t + 1)]['Available_Scooters'].iloc[0]
+        fractions = self.transition_matrix[(self.transition_matrix['End Hour'] == t)]['Average Fraction'].iloc[0]
+        next_available_scooters = cur_available_scooters + (fractions * added_trips)
+        if not temp:
+            self.supply_df.loc[self.supply_df['Start Hour'] == t + 1, 'Available_Scooters'] = next_available_scooters.astype(int)
         else:
-            cur_available_scooters = self.supply_df[(self.supply_df['Start Hour'] == t)]['Available_Scooters'].iloc[0]
-            fractions = self.transition_matrix[(self.transition_matrix['End Hour'] == t)]['Average Fraction'].iloc[0]
-            next_available_scooters = cur_available_scooters + (fractions * no_trips)
-            if not temp:
-                self.supply_df.loc[self.supply_df['Start Hour'] == t + 1, 'Available_Scooters'] = next_available_scooters.astype(int)
-            else:
-                return next_available_scooters.astype(int)
+            return next_available_scooters.astype(int)
 
     def base_supply(self, t):
         return self.supply_df[self.supply_df['Start Hour'] == t]['Trip_Count'].iloc[0]
@@ -87,7 +86,7 @@ class SupplyDemandModel:
         return max(new_price, 0)
 
     def get_requests(self, supply):
-        requests = int(supply * random.uniform(0.85, 1))
+        requests = int(supply * random.uniform(0.85, 1.5))
         if requests <= 0:
             return 1
         else:
@@ -121,13 +120,16 @@ class PPricingArea:
         self.base_demand = self.supply_demand_model.estimate_demand(self.t, self.default_price, self.requests)
         self.base_trips = self._calc_trips(self.base_supply, self.base_demand)
 
+    def transition(self, added_trips):
+        self.supply_demand_model.transition_next_timestep(self.t, added_trips)
+
     def calc_revenue_decrease(self, added_trips):
         optimal_price_demand = self.supply_demand_model.estimate_demand(self.t, self.optimal_price, self.requests)
         optimal_price_trips = self._calc_trips(self.base_supply, optimal_price_demand)
         inverse_demand_optimal_price = self.supply_demand_model.inverse_demand(self.t, optimal_price_trips + added_trips, self.requests)
         delta_p = self.optimal_price - inverse_demand_optimal_price
         rev_dec = optimal_price_trips * delta_p + added_trips * delta_p - added_trips * self.optimal_price
-        return rev_dec
+        return -rev_dec
 
     def calc_revenue_increase(self, added_supply):
         revenue_s2 = self._calc_revenue_s2(added_supply)
@@ -135,12 +137,17 @@ class PPricingArea:
         return revenue_s2 - revenue_s1
 
     def _calc_revenue_s2(self, added_supply):
-        new_next_available_scooters = self.supply_demand_model.base_supply(self.t + 1) + added_supply # TODO: t+1 fixen.
-        new_next_supply = self.supply_demand_model.estimate_supply(self.t+1, new_next_available_scooters)
-        new_next_requests = self.supply_demand_model.get_requests(new_next_supply)
-        new_next_demand = self.supply_demand_model.estimate_demand(self.t + 1, self.default_price, new_next_requests)
+        if self.t + 1 < 24:
+            t = self.t
+        else:
+            t = 0
 
-        new_price = self.supply_demand_model.inverse_demand(self.t + 1, new_next_demand, new_next_requests)
+        new_next_available_scooters = self.supply_demand_model.base_supply(t) + added_supply
+        new_next_supply = self.supply_demand_model.estimate_supply(t, new_next_available_scooters)
+        new_next_requests = self.supply_demand_model.get_requests(new_next_supply)
+        new_next_demand = self.supply_demand_model.estimate_demand(t, self.default_price, new_next_requests)
+
+        new_price = self.supply_demand_model.inverse_demand(t, new_next_demand, new_next_requests)
         new_trips = self._calc_trips(new_next_supply, new_next_demand)
 
         return new_price * new_trips
@@ -177,13 +184,15 @@ class PPricingArea:
             return p_d
 
     def calc_delta_p(self, delta_t):
-        price_for_updated_demand = self.supply_demand_model.inverse_demand(self.t, self.base_demand - delta_t, self.requests)
+        price_for_updated_demand = self.supply_demand_model.inverse_demand(self.t, self.base_demand - delta_t, self.requests + delta_t)
         return self.optimal_price - price_for_updated_demand
 
 
 class PPricing:
-    def __init__(self, default_price=0.45, ped=-2, max_price=1, total_areas=41, max_battery_distance=4500):
+    def __init__(self, default_price=0.45, ped=-2, max_price=1, total_areas=41, max_battery_distance=4500, max_evals=10, min_price=0.1):
         self.t = 0
+        self.max_evals = max_evals
+        self.min_price = min_price
         self.available_scooters = 0
         self.total_areas = total_areas
         self.max_price = max_price
@@ -192,6 +201,7 @@ class PPricing:
         self.ped = ped
         self.max_battery_distance = max_battery_distance
         self.transition_matrix = pd.read_csv('transition_model.csv')
+        self.transition_matrix.sort_values(['End Hour', 'End Community Area Name'], inplace=True)
 
     def init_areas(self, names):
         for area_name in names:
@@ -202,12 +212,6 @@ class PPricing:
                 ped = self.ped,
                 max_battery_distance = self.max_battery_distance
             ))
-
-    def _multiply_t_transition(self, delta_T):
-        self.transition_matrix.sort_values(['End Hour', 'End Community Area Name'], inplace=True)
-        curr_fractions = 1 + self.transition_matrix.loc[self.transition_matrix['End Hour'] == self.t]['Average Fraction'].copy()
-        next_v_estimate = curr_fractions.values * delta_T
-        return next_v_estimate.astype(int)
 
     def _calc_revenue_decrease(self, delta_T):
         rev_dec = 0
@@ -220,17 +224,6 @@ class PPricing:
         for area, added_supply in zip(self.areas, delta_V):
             rev_inc += area.calc_revenue_increase(added_supply)
         return rev_inc
-
-    def objective_function(self, instance, solution, solution_idx):
-        delta_T = solution
-        delta_V = self._multiply_t_transition(delta_T)
-
-        if not sum(delta_V) == self.available_scooters:
-            revenue = -1000000
-        else:
-            revenue = self._calc_revenue_increase(delta_V) - self._calc_revenue_decrease(delta_T)
-        print(revenue)
-        return revenue
 
     def _update_areas(self):
         available_scooters = 0
@@ -246,28 +239,76 @@ class PPricing:
         optimal_prices = {}
         for area, added_trips in zip(self.areas, optimal_delta_T):
             delta_p = area.optimal_price - area.calc_delta_p(added_trips)
-            optimal_prices[area.area_name] = area.optimal_price - delta_p
+            if area.optimal_price - delta_p > self.min_price:
+                optimal_prices[area.area_name] = area.optimal_price - delta_p
+            else:
+                optimal_prices[area.area_name] = self.min_price
 
+            area.transition(added_trips)
         return optimal_prices
 
-    def run_algo(self):
-        self._update_areas()
-        ga_instance = pygad.GA(num_generations=10000,
-                               num_parents_mating=2,
-                               fitness_func=self.objective_function,
-                               sol_per_pop=5,
-                               num_genes=self.total_areas,
-                               gene_type=int,
-                               gene_space={'low': 0, 'high': 150},
-                               parent_selection_type="rank",
-                               crossover_type="single_point",
-                               mutation_type="random",
-                               mutation_percent_genes=10)
-        ga_instance.run()
-        solution, solution_fitness, solution_idx = ga_instance.best_solution()
-        optimal_prices = self._find_optimal_price(solution)
-        print(optimal_prices)
+    def _objective_function(self, delta_T, delta_V):
+        revenue = self._calc_revenue_increase(delta_V) - self._calc_revenue_decrease(delta_T)
+        return revenue
 
+    def _sum_constraint(self, delta_T, curr_fractions):
+        current_sum = int(np.sum(curr_fractions * delta_T))
+        while current_sum != self.available_scooters:
+            if current_sum > self.available_scooters:
+                indices = np.where(delta_T > 1)[0]
+                if len(indices) > 0:
+                    delta_T[np.random.choice(indices)] -= 1
+            else:
+                delta_T[np.random.randint(len(delta_T))] += 1
+            current_sum = int(np.sum(curr_fractions * delta_T))
+        return delta_T
+
+    def _calc_t_total_revenue(self, optimal_prices):
+        new_revenue = 0
+        default_revenue = 0
+        for area in self.areas:
+            price = optimal_prices[area.area_name]
+            new_revenue += price * area.base_trips
+            default_revenue += area.optimal_price * area.base_trips
+        return new_revenue, default_revenue
+
+    def _random_search(self, curr_fractions):
+        cur_best_revenue = 0
+        cur_best_delta_T = None
+
+        for i in range(self.max_evals):
+            delta_T = np.random.randint(1, 200, size=curr_fractions.shape[0])
+            delta_T = self._sum_constraint(delta_T, curr_fractions)
+            delta_V = (delta_T * curr_fractions).astype(int)
+            revenue = self._objective_function(delta_T, delta_V)
+            if revenue > cur_best_revenue:
+                cur_best_revenue = revenue
+                cur_best_delta_T = delta_T
+            print(f'Evaluation: {i}\nCurrent best revenue: {cur_best_revenue}')
+        return cur_best_delta_T
+
+    def run_algo(self):
+        new_revenue_lst = []
+        default_revenue_lst = []
+
+        for j in range(24):
+            print(f'Running for t = {j}')
+            self.t = j
+            self._update_areas()
+            curr_fractions = 1 + self.transition_matrix.loc[self.transition_matrix['End Hour'] == self.t][
+                'Average Fraction'].copy().values
+            solution = self._random_search(curr_fractions)
+            optimal_prices = self._find_optimal_price(solution)
+            new_revenue, default_revenue = self._calc_t_total_revenue(optimal_prices)
+            new_revenue_lst.append(new_revenue)
+            default_revenue_lst.append(default_revenue)
+
+            print(f'Total revenue using PPricing for t = {j}: {new_revenue}')
+            print(f'Total revenue using default price for t = {j}: {default_revenue}')
+
+        print(f'Total revenue PPricing: {sum(new_revenue_lst)}')
+        print(f'Total revenue default price: {sum(default_revenue_lst)}')
+        return new_revenue_lst, default_revenue_lst
 
 def test():
     df = pd.read_csv('base_supply.csv')
@@ -278,4 +319,12 @@ def test():
     ppricing.run_algo()
 
 test()
+
+"""
+Experimenten (denk ik):
+- die ped param varieren
+- de random demand dingen varieren
+- misschien max_evals iets ophogen
+
+"""
 
