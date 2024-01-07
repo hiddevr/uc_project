@@ -289,10 +289,13 @@ class PPricing:
 
     def _calc_t_total_revenue(self, optimal_prices):
         new_revenue = 0
+        avg_price = 0
         for area in self.areas:
             price = optimal_prices[area.area_name]
             new_revenue += price * area.current_trips
-        return new_revenue
+            avg_price += price
+        avg_price = avg_price / len(optimal_prices)
+        return new_revenue, avg_price
 
     def _random_search(self, curr_fractions):
         cur_best_revenue = 0
@@ -312,6 +315,7 @@ class PPricing:
     def run_algo(self):
         new_revenue_lst = []
         default_lst = []
+        avg_prices = []
         for j in range(24):
             # No data for 3AM and 4AM, so skip.
             if j == 3 or j == 4:
@@ -323,17 +327,18 @@ class PPricing:
                 'Average Fraction'].copy().values
             solution = self._random_search(curr_fractions)
             optimal_prices = self._find_optimal_price(solution)
-            new_revenue = self._calc_t_total_revenue(optimal_prices)
+            new_revenue, avg_price = self._calc_t_total_revenue(optimal_prices)
             new_revenue_lst.append(new_revenue)
+            avg_prices.append(avg_price)
 
-            print(f'Total revenue using PPricing for t = {j}: {new_revenue}')
+            print(f'Total revenue using PPricing for t = {j}: {new_revenue}, avg price: {avg_price}')
             print(f'Total revenue using default price for t = {j}: {self.default_revenue.get(j)}')
 
             default_lst.append(self.default_revenue.get(j))
 
         print(f'Total revenue PPricing: {sum(new_revenue_lst)}, average: {sum(new_revenue_lst) / len(new_revenue_lst)}')
         print(f'Total revenue default price: {sum(default_lst)}, average: {sum(default_lst) / len(default_lst)}')
-        return new_revenue_lst, default_lst
+        return new_revenue_lst, default_lst, avg_prices
 
 
 """
