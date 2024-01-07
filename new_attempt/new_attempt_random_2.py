@@ -7,21 +7,26 @@ import scipy.optimize as optimize
 import tqdm
 
 
+
 class SupplyDemandModel:
-    def __init__(self, area_name, default_price, ped, max_battery_distance):
+    def __init__(self, area_name, default_price, ped, max_battery_distance, alpha=1, beta=0.1, min_req=0.95,
+                 max_req=1.1):
         self.max_battery_distance = max_battery_distance
         self.area_name = area_name
         self.default_price = default_price
         self.ped = ped
         self.trips_per_hour = 0.015
-        self.alpha = 1
-        self.beta = 0.1
+        self.alpha = alpha
+        self.beta = beta
+        self.min_req = min_req
+        self.max_req = max_req
 
         self.supply_df = pd.read_csv('base_supply.csv')
         self.supply_df.sort_values(['Start Hour'], inplace=True)
         self.supply_df = self.supply_df.loc[self.supply_df['Start Community Area Name'] == area_name].copy()
         self.transition_matrix = pd.read_csv('transition_model.csv')
-        self.transition_matrix = self.transition_matrix.loc[self.transition_matrix['End Community Area Name'] == area_name].copy()
+        self.transition_matrix = self.transition_matrix.loc[
+            self.transition_matrix['End Community Area Name'] == area_name].copy()
         self.transition_matrix.sort_values(['End Hour'], inplace=True)
         self.demand_df = pd.read_csv('base_demand.csv')
         self.demand_df = self.demand_df.loc[self.demand_df['Start Community Area Name'] == area_name].copy()
@@ -36,13 +41,14 @@ class SupplyDemandModel:
         self.kde_model.set_bandwidth(trip_distance_kde['bandwidth'])
 
     def transition_next_timestep(self, t, added_trips, temp=False):
-        if (t + 1) % 24 == 0:
-            t = -1
-        cur_available_scooters = self.supply_df[(self.supply_df['Start Hour'] == t + 1)]['Available_Scooters'].iloc[0]
+        cur_available_scooters = \
+        self.supply_df[(self.supply_df['Start Hour'] == ((t + 1) % 24))]['Available_Scooters'].iloc[0]
         fractions = self.transition_matrix[(self.transition_matrix['End Hour'] == t)]['Average Fraction'].iloc[0]
         next_available_scooters = cur_available_scooters + (fractions * added_trips)
         if not temp:
-            self.supply_df.loc[self.supply_df['Start Hour'] == t + 1, 'Available_Scooters'] = next_available_scooters.astype(int)
+            self.supply_df.loc[
+                self.supply_df['Start Hour'] == ((t + 1) % 24), 'Available_Scooters'] = next_available_scooters.astype(
+                int)
         else:
             return next_available_scooters.astype(int)
 
@@ -71,7 +77,7 @@ class SupplyDemandModel:
         return probability
 
     def get_requests(self, supply):
-        requests = int(supply * random.uniform(0.95, 1.1))
+        requests = int(supply * random.uniform(self.min_req, self.max_req))
         if requests <= 0:
             return 1
         else:
@@ -89,11 +95,14 @@ class SupplyDemandModel:
         price = -1 / self.beta * np.log(required_demand / (self.alpha * requests))
         return max(price, 0)
 
+
 class PPricingArea:
-    def __init__(self, area_name, max_price, default_price, ped, max_battery_distance):
+    def __init__(self, area_name, max_price, default_price, ped, max_battery_distance, alpha=1, beta=0.1,
+                 min_req = 0.95, max_req=1.1):
         self.area_name = area_name
         self.max_price = max_price
-        self.supply_demand_model = SupplyDemandModel(area_name, default_price, ped, max_battery_distance)
+        self.supply_demand_model = SupplyDemandModel(area_name, default_price, ped, max_battery_distance, alpha, beta,
+                                                     min_req, max_req)
         self.default_price = default_price
         self.t = 0
         self.available_scooters = None
@@ -137,7 +146,8 @@ class PPricingArea:
     def calc_revenue_decrease(self, added_trips):
         optimal_price_demand = self.supply_demand_model.estimate_demand(self.current_supply, self.current_optimal_price)
         optimal_price_trips = self._calc_trips(self.current_supply, optimal_price_demand)
-        inverse_demand_optimal_price = self.supply_demand_model.inverse_demand(optimal_price_trips + added_trips, self.current_supply)
+        inverse_demand_optimal_price = self.supply_demand_model.inverse_demand(optimal_price_trips + added_trips,
+                                                                               self.current_supply)
         delta_p = self.current_optimal_price - inverse_demand_optimal_price
         rev_dec = optimal_price_trips * delta_p + added_trips * delta_p - added_trips * self.current_optimal_price
         return -rev_dec
@@ -185,11 +195,15 @@ class PPricingArea:
             return p_d
 
     def calc_delta_p(self, delta_t):
-        price_for_updated_demand = self.supply_demand_model.inverse_demand(self.supply_demand_model.estimate_demand(self.current_supply, self.current_optimal_price) - delta_t, self.current_supply)
+        price_for_updated_demand = self.supply_demand_model.inverse_demand(
+            self.supply_demand_model.estimate_demand(self.current_supply, self.current_optimal_price) - delta_t,
+            self.current_supply)
         return self.current_optimal_price - price_for_updated_demand
 
+
 class PPricing:
-    def __init__(self, default_price=0.45, ped=-2, max_price=1, total_areas=41, max_battery_distance=4500, max_evals=10, min_price=0.1):
+    def __init__(self, default_price=0.45, ped=-2, max_price=1, total_areas=41, max_battery_distance=4500, max_evals=10,
+                 min_price=0.1):
         self.t = 0
         self.max_evals = max_evals
         self.min_price = min_price
@@ -210,14 +224,18 @@ class PPricing:
         grouped_sum = df.groupby('Start Hour')['revenue'].sum()
         return grouped_sum.to_dict()
 
-    def init_areas(self, names):
+    def init_areas(self, names, alpha=1, beta=0.1, min_req=0.95, max_req=1.1):
         for area_name in names:
             self.areas.append(PPricingArea(
-                area_name = area_name,
-                max_price = self.max_price,
-                default_price = self.default_price,
-                ped = self.ped,
-                max_battery_distance = self.max_battery_distance
+                area_name=area_name,
+                max_price=self.max_price,
+                default_price=self.default_price,
+                ped=self.ped,
+                max_battery_distance=self.max_battery_distance,
+                alpha=alpha,
+                beta=beta,
+                min_req=min_req,
+                max_req=max_req
             ))
 
     def _calc_revenue_decrease(self, delta_T):
@@ -239,7 +257,6 @@ class PPricing:
             area.update()
             available_scooters += area.available_scooters
         self.available_scooters = available_scooters
-        print(available_scooters)
         return
 
     def _find_optimal_price(self, optimal_delta_T):
@@ -289,14 +306,15 @@ class PPricing:
             if revenue > cur_best_revenue:
                 cur_best_revenue = revenue
                 cur_best_delta_T = delta_T
-            print(f'Evaluation: {i}\nCurrent best revenue: {cur_best_revenue}')
+            # print(f'Evaluation: {i}\nCurrent best revenue: {cur_best_revenue}')
         return cur_best_delta_T
 
     def run_algo(self):
         new_revenue_lst = []
-
+        default_lst = []
         for j in range(24):
-            if j == [2,3, 4, 5, 6, 7, 8]: #TODO: Ik skip nu even deze omdat die heel lastig oplossingen kan vinden hiervoor.
+            # No data for 3AM and 4AM, so skip.
+            if j == 3 or j == 4:
                 continue
             print(f'Running for t = {j}')
             self.t = j
@@ -311,19 +329,12 @@ class PPricing:
             print(f'Total revenue using PPricing for t = {j}: {new_revenue}')
             print(f'Total revenue using default price for t = {j}: {self.default_revenue.get(j)}')
 
-        print(f'Total revenue PPricing: {sum(new_revenue_lst)}')
-        print(f'Total revenue default price: {sum(self.default_revenue.values)}')
-        return new_revenue_lst, self.default_revenue
+            default_lst.append(self.default_revenue.get(j))
 
-def test():
-    df = pd.read_csv('base_supply.csv')
-    area_names = df['Start Community Area Name'].unique().tolist()
+        print(f'Total revenue PPricing: {sum(new_revenue_lst)}, average: {sum(new_revenue_lst) / len(new_revenue_lst)}')
+        print(f'Total revenue default price: {sum(default_lst)}, average: {sum(default_lst) / len(default_lst)}')
+        return new_revenue_lst, default_lst
 
-    ppricing = PPricing()
-    ppricing.init_areas(area_names)
-    ppricing.run_algo()
-
-test()
 
 """
 Experimenten (denk ik):
@@ -333,4 +344,6 @@ Experimenten (denk ik):
 - alpha/beta params varieren
 
 """
+
+
 
