@@ -9,7 +9,7 @@ def experiment_max_evals():
     new_revenue_list = []
     default_revenue_list = []
     avg_prices = []
-    evals = [10]#, 20, 50, 100]
+    evals = [10, 20, 50, 100]
     for eval in evals:
         print(f"START: {eval}\n")
         ppricing = PPricing(max_evals=eval)
