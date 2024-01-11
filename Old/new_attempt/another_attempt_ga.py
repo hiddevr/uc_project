@@ -27,9 +27,9 @@ class SupplyDemandModel:
         self.demand_df = self.demand_df.loc[self.demand_df['Start Community Area Name'] == area_name].copy()
         self.demand_df.sort_values(['Start Hour'], inplace=True)
 
-        with open('distributions/trip_distance.pkl', 'rb') as file:
+        with open('../../distributions/trip_distance.pkl', 'rb') as file:
             trip_distance_kde = pickle.load(file)
-        with open('distributions/average_distance_per_hour.pkl', 'rb') as f:
+        with open('../../distributions/average_distance_per_hour.pkl', 'rb') as f:
             self.average_distances = pickle.load(f)
 
         self.kde_model = gaussian_kde(trip_distance_kde['dataset'])

@@ -21,14 +21,14 @@ class SupplyDemandModel:
         self.min_req = min_req
         self.max_req = max_req
 
-        self.supply_df = pd.read_csv('base_supply.csv')
+        self.supply_df = pd.read_csv('Old/new_attempt/base_supply.csv')
         self.supply_df.sort_values(['Start Hour'], inplace=True)
         self.supply_df = self.supply_df.loc[self.supply_df['Start Community Area Name'] == area_name].copy()
-        self.transition_matrix = pd.read_csv('transition_model.csv')
+        self.transition_matrix = pd.read_csv('Old/new_attempt/transition_model.csv')
         self.transition_matrix = self.transition_matrix.loc[
             self.transition_matrix['End Community Area Name'] == area_name].copy()
         self.transition_matrix.sort_values(['End Hour'], inplace=True)
-        self.demand_df = pd.read_csv('base_demand.csv')
+        self.demand_df = pd.read_csv('Old/new_attempt/base_demand.csv')
         self.demand_df = self.demand_df.loc[self.demand_df['Start Community Area Name'] == area_name].copy()
         self.demand_df.sort_values(['Start Hour'], inplace=True)
 
@@ -214,12 +214,12 @@ class PPricing:
         self.areas = []
         self.ped = ped
         self.max_battery_distance = max_battery_distance
-        self.transition_matrix = pd.read_csv('transition_model.csv')
+        self.transition_matrix = pd.read_csv('Old/new_attempt/transition_model.csv')
         self.transition_matrix.sort_values(['End Hour', 'End Community Area Name'], inplace=True)
         self.default_revenue = self._calc_default_revenue()
 
     def _calc_default_revenue(self):
-        df = pd.read_csv('base_demand.csv')
+        df = pd.read_csv('Old/new_attempt/base_demand.csv')
         df['revenue'] = df['Price'] * df['Trip_Count']
         grouped_sum = df.groupby('Start Hour')['revenue'].sum()
         return grouped_sum.to_dict()
@@ -340,15 +340,6 @@ class PPricing:
         print(f'Total revenue default price: {sum(default_lst)}, average: {sum(default_lst) / len(default_lst)}')
         return new_revenue_lst, default_lst, avg_prices
 
-
-"""
-Experimenten (denk ik):
-- die ped param varieren
-- de random demand dingen varieren
-- misschien max_evals iets ophogen
-- alpha/beta params varieren
-
-"""
 
 
 

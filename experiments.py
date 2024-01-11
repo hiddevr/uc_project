@@ -1,15 +1,15 @@
-from new_attempt_random_2 import PPricing
+from final_version import PPricing
 import random
 import pandas as pd
 import matplotlib.pyplot as plt
 def experiment_max_evals():
     random.seed(1298)
-    df = pd.read_csv('base_supply.csv')
+    df = pd.read_csv('Old/new_attempt/base_supply.csv')
     area_names = df['Start Community Area Name'].unique().tolist()
     new_revenue_list = []
     default_revenue_list = []
     avg_prices = []
-    evals = [10, 20, 50, 100]
+    evals = [10]#, 20, 50, 100]
     for eval in evals:
         print(f"START: {eval}\n")
         ppricing = PPricing(max_evals=eval)
@@ -45,7 +45,7 @@ def experiment_max_evals():
 
 def experiment_alpha_beta():
     random.seed(1298)
-    df = pd.read_csv('base_supply.csv')
+    df = pd.read_csv('Old/new_attempt/base_supply.csv')
     area_names = df['Start Community Area Name'].unique().tolist()
     new_revenue_list = []
     default_revenue_list = []
@@ -92,7 +92,7 @@ def experiment_alpha_beta():
 
 def experiment_random_demand():
     random.seed(1298)
-    df = pd.read_csv('base_supply.csv')
+    df = pd.read_csv('Old/new_attempt/base_supply.csv')
     area_names = df['Start Community Area Name'].unique().tolist()
     new_revenue_list = []
     default_revenue_list = []
