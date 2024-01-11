@@ -9,14 +9,15 @@ def experiment_max_evals():
     new_revenue_list = []
     default_revenue_list = []
     avg_prices = []
-    evals = [10]#, 20]#, 50, 100]
+    evals = [10, 20, 50, 100]
     for eval in evals:
         print(f"START: {eval}\n")
         ppricing = PPricing(max_evals=eval)
         ppricing.init_areas(area_names)
-        new_revenue, default_revenue, avg_prices = ppricing.run_algo()
+        new_revenue, default_revenue, l_avg_prices = ppricing.run_algo()
         new_revenue_list.append(new_revenue)
         default_revenue_list.append(default_revenue)
+        avg_prices.append(l_avg_prices)
     ratio_list = []
     for (default, p_pricing) in zip(default_revenue_list, new_revenue_list):
         l_ratio_list = []
@@ -33,7 +34,8 @@ def experiment_max_evals():
     fig1.savefig("total_new_revenue.png")
 
     fig2, ax2 = plt.subplots()
-    ax2.plot(avg_prices, label="Average price")
+    for (l_price, eval) in zip(avg_prices, evals):
+        ax2.plot(l_price, label=str(eval) + ' evals')
     ax2.set_xlabel("Hour")
     ax2.set_ylabel("Price")
     ax2.legend(loc='best')
@@ -48,18 +50,19 @@ def experiment_alpha_beta():
     new_revenue_list = []
     default_revenue_list = []
     avg_prices = []
-    alphas = [0.5]#, 1.0]#, 1.5]
-    betas = [0.1]#, 0.2, 0.5]
+    alphas = [0.5, 1.0, 1.5]
+    betas = [0.1, 0.2, 0.5]
     for alpha in alphas:
         for beta in betas:
             print(f"START, ALPHA: {alpha}, BETA: {beta}")
             ppricing = PPricing()
             ppricing.init_areas(area_names, alpha=alpha, beta=beta)
-            new_revenue, default_revenue, avg_prices = ppricing.run_algo()
+            new_revenue, default_revenue, l_avg_prices = ppricing.run_algo()
             tuple_new = (alpha, beta, new_revenue)
             new_revenue_list.append(tuple_new)
             tuple_default = (alpha, beta, default_revenue)
             default_revenue_list.append(tuple_default)
+            avg_prices.append((alpha, beta, l_avg_prices))
 
     ratio_list = []
     for (default, p_pricing) in zip(default_revenue_list, new_revenue_list):
@@ -78,7 +81,9 @@ def experiment_alpha_beta():
     fig1.savefig("revenue_alpha_beta")
 
     fig2, ax2 = plt.subplots()
-    ax2.plot(avg_prices, label="Average price")
+    for a_list in avg_prices:
+        label = f"Alpha: {a_list[0]}, Beta: {a_list[1]}"
+        ax2.plot(a_list[2], label=label)
     ax2.set_xlabel("Hour")
     ax2.set_ylabel("Price")
     ax2.legend(loc='best')
@@ -91,19 +96,20 @@ def experiment_random_demand():
     area_names = df['Start Community Area Name'].unique().tolist()
     new_revenue_list = []
     default_revenue_list = []
-    min_values = [0.85]#, 0.90, 0.95]
-    max_values = [1.05]#, 1.1]#, 1.15]
+    min_values = [0.85, 0.90, 0.95]
+    max_values = [1.05, 1.1, 1.15]
     avg_prices = []
     for min in min_values:
         for max in max_values:
             print(f"START: MIN: {min}, MAX: {max}")
             ppricing = PPricing()
             ppricing.init_areas(area_names, min_req=min, max_req=max)
-            new_revenue, default_revenue, avg_prices = ppricing.run_algo()
+            new_revenue, default_revenue, l_avg_prices = ppricing.run_algo()
             tuple_new = (min, max, new_revenue)
             new_revenue_list.append(tuple_new)
             tuple_default = (min, max, default_revenue)
             default_revenue_list.append(tuple_default)
+            avg_prices.append((min, max, l_avg_prices))
 
     ratio_list = []
     for (default, p_pricing) in zip(default_revenue_list, new_revenue_list):
@@ -122,10 +128,14 @@ def experiment_random_demand():
     fig1.savefig("revenue_min_max.png")
 
     fig2, ax2 = plt.subplots()
-    ax2.plot(avg_prices, label="Average price")
+    for a_list in avg_prices:
+        label = f"Minimum: {a_list[0]}, Maximum: {a_list[1]}"
+        ax2.plot(a_list[2], label=label)
     ax2.set_xlabel("Hour")
     ax2.set_ylabel("Price")
     ax2.legend(loc='best')
     fig2.savefig("avg_price_min_max.png")
 
+experiment_max_evals()
+experiment_alpha_beta()
 experiment_random_demand()
